@@ -1,0 +1,186 @@
+
+// NDVI ANALYSIS FOR JHANSI REGION USING SENTINEL-2 DATA (2024)
+// Author: Soumyajeet Sahu
+// Contact: heysoumyajeetsahu1999@gmail.com
+// Date: October 30, 2025
+// Description: This script generates a median composite NDVI and quarterly 
+//              individual scenes for the Jhansi region using Sentinel-2 data
+
+
+
+// Load AOI asset
+var aoi = ee.FeatureCollection('projects/ee-heysoumyajeetsahu1999/assets/Jhansi');
+
+// Center the map on the AOI and display boundary
+Map.centerObject(aoi, 10);
+Map.addLayer(aoi, {color: 'red'}, 'Jhansi AOI');
+
+// Define the time period for analysis
+var startDate = '2024-01-01';
+var endDate = '2024-12-31';
+
+// Cloud cover threshold (percentage)
+var cloudThreshold = 5;
+
+// Visualization parameters for NDVI
+var ndviVis = {
+  min: -0.2,
+  max: 0.8,
+  palette: ['blue', 'white', 'green']
+};
+
+// Export parameters
+var exportScale = 10;  // meters
+var exportFolder = 'GEE_Exports';
+var exportCRS = 'EPSG:4326';
+
+
+// Load Sentinel-2 Surface Reflectance collection
+var s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+  .filterBounds(aoi)
+  .filterDate(startDate, endDate)
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', cloudThreshold));
+
+print('Total images with <' + cloudThreshold + '% cloud cover:', s2.size());
+
+// Function to mask clouds using the QA60 band
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+  // Bits 10 and 11 are clouds and cirrus, respectively
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+  // Both flags should be set to zero, indicating clear conditions
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+  return image.updateMask(mask);
+}
+
+// Function to calculate NDVI
+// NDVI = (NIR - Red) / (NIR + Red)
+// For Sentinel-2: NIR = B8, Red = B4
+function addNDVI(image) {
+  var ndvi = image.normalizedDifference(['B8', 'B4']).rename('NDVI');
+  return image.addBands(ndvi);
+}
+
+
+// Apply cloud masking and NDVI calculation to all images
+var s2WithNDVI = s2
+  .map(maskS2clouds)
+  .map(addNDVI);
+
+print('Image Collection with NDVI:', s2WithNDVI);
+
+
+// Create median composite of NDVI using ALL images
+var ndviMedianComposite = s2WithNDVI
+  .select('NDVI')
+  .median()
+  .clip(aoi);
+
+// Add the median composite to the map (VISIBLE by default)
+Map.addLayer(ndviMedianComposite, ndviVis, 'NDVI Median Composite 2024', true);
+
+// Calculate statistics for the median composite
+var stats = ndviMedianComposite.reduceRegion({
+  reducer: ee.Reducer.mean().combine({
+    reducer2: ee.Reducer.minMax(),
+    sharedInputs: true
+  }),
+  geometry: aoi,
+  scale: exportScale,
+  maxPixels: 1e9
+});
+
+print('NDVI Statistics (Median Composite):', stats);
+
+
+
+// Export the median composite NDVI
+Export.image.toDrive({
+  image: ndviMedianComposite,
+  description: 'Jhansi_NDVI_Median_Composite_2024',
+  folder: exportFolder,
+  fileNamePrefix: 'Jhansi_NDVI_Median_2024',
+  region: aoi,
+  scale: exportScale,
+  maxPixels: 1e9,
+  crs: exportCRS
+});
+
+print('Median composite export task created!');
+
+
+// Define quarterly time periods
+var months = [
+  ['2024-01-01', '2024-03-31'],  // Q1
+  ['2024-04-01', '2024-06-30'],  // Q2
+  ['2024-07-01', '2024-09-30'],  // Q3
+  ['2024-10-01', '2024-12-31']   // Q4
+];
+
+// Function to get the best image from a time period
+// Selects image with lowest cloud cover percentage
+function getBestImageFromPeriod(startDate, endDate) {
+  var periodImages = s2WithNDVI
+    .filterDate(startDate, endDate)
+    .sort('CLOUDY_PIXEL_PERCENTAGE');
+  return periodImages.first();
+}
+
+// Collect best images from each quarter
+var selectedImages = ee.ImageCollection.fromImages(
+  months.map(function(period) {
+    return getBestImageFromPeriod(period[0], period[1]);
+  })
+);
+
+// Remove null images (in case some quarters don't have data)
+selectedImages = selectedImages.filter(ee.Filter.notNull(['system:index']));
+
+print('Selected quarterly images:', selectedImages.size());
+print('Selected images details:', selectedImages);
+
+
+
+// Add individual quarterly NDVI images to map and export them
+var imageList = selectedImages.toList(selectedImages.size());
+var actualSize = selectedImages.size().getInfo();
+
+print('Number of images to display and export:', actualSize);
+
+for (var i = 0; i < actualSize; i++) {
+  var img = ee.Image(imageList.get(i));
+  var date = ee.Date(img.get('system:time_start')).format('YYYY-MM-dd').getInfo();
+  var ndviScene = img.select('NDVI').clip(aoi);
+  
+  // Add layer to map (hidden by default)
+  Map.addLayer(
+    ndviScene, 
+    ndviVis, 
+    'NDVI Scene ' + (i + 1) + ' - ' + date, 
+    false  // Keep layer hidden/unchecked by default
+  );
+  
+  // Export individual scene NDVI
+  Export.image.toDrive({
+    image: ndviScene,
+    description: 'Jhansi_NDVI_Scene_' + (i + 1) + '_' + date,
+    folder: exportFolder,
+    fileNamePrefix: 'Jhansi_NDVI_Scene_' + (i + 1) + '_' + date,
+    region: aoi,
+    scale: exportScale,
+    maxPixels: 1e9,
+    crs: exportCRS
+  });
+  
+  print('Export task created for Scene ' + (i + 1) + ': ' + date);
+}
+
+
+
+print('=====================================================');
+print('All export tasks created!');
+print('Go to the Tasks tab to run them.');
+print('=====================================================');
+
