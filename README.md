@@ -163,10 +163,6 @@ NDVI Values Interpretation:
 5. Edge Effects: AOI boundaries may have reduced data coverage due to satellite swath patterns
 6. Monsoon Season: Cloud cover is typically higher June-September, reducing available imagery
 
-## Funding and Permissions
-[Add your funding sources here]
-[Add relevant permits: satellite data use, institutional approval, etc.]
-
 
 ## Contact for Questions
 For questions about this analysis, please contact at [jeetsahu1999@gmail.com]
