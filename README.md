@@ -1,10 +1,10 @@
 # NDVI Analysis for Jhansi Region Using Sentinel-2 Data (2024)
 
-## Authors and Contact
+## Contact
 - Author: Soumyajeet Sahu (jeetsahu1999@gmail.com)
 - Date: October 30, 2025
 
-## Study Overview
+## Overview
 This repository contains the code and documentation for calculating Normalized Difference Vegetation Index (NDVI) for the Jhansi region in India using Sentinel-2 satellite imagery from 2024. The analysis produces:
 1. A median composite NDVI layer for the entire year
 2. Individual quarterly NDVI scenes for temporal analysis
